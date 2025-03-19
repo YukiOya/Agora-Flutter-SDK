@@ -7,6 +7,7 @@ import 'package:agora_rtc_engine_example/components/example_actions_widget.dart'
 import 'package:agora_rtc_engine_example/components/log_sink.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 const _channelId0 = 'channel0';
@@ -32,9 +33,13 @@ class _State extends State<JoinMultipleChannel> {
   late final TextEditingController _channel1UidController;
   bool _startDumpVideo = false;
 
+  final MethodChannel _sharedNativeHandleChannel =
+      const MethodChannel('agora_rtc_engine_example/shared_native_handle');
+
   @override
   void initState() {
     super.initState();
+
     _channel0UidController = TextEditingController(text: '1000');
     _channel1UidController = TextEditingController(text: '1001');
     _initEngine();
@@ -43,11 +48,28 @@ class _State extends State<JoinMultipleChannel> {
   @override
   void dispose() {
     super.dispose();
-    _engine.release();
+    _dispose();
+  }
+  Future<void> _dispose() async {
+    await _engine.leaveChannel();
+    await _engine.release();
+    // Destroys the `RtcEngine`(Android)/`AgoraRtcEngineKit`(iOS) on native side.
+    // Note that this should be called after the Flutter side `RtcEngine.release` function.
+    //
+    // See native side implementation:
+    // Android: `example/android/app/src/main/kotlin/io/agora/agora_rtc_flutter_example/MainActivity.kt`
+    // iOS: `example/ios/Runner/AppDelegate.m`
+    await _sharedNativeHandleChannel.invokeMethod('native_dispose');
   }
 
   _initEngine() async {
-    _engine = createAgoraRtcEngineEx();
+    final sharedNativeHandle = await _sharedNativeHandleChannel.invokeMethod(
+      'native_init',
+      {'appId': config.appId},
+    );
+    _engine = createAgoraRtcEngineEx(
+      sharedNativeHandle: sharedNativeHandle,
+    );
     await _engine.initialize(RtcEngineContext(
       appId: config.appId,
       channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
